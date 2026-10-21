@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>membergraph · 多智能体会员增长工作台</title>
+<style>
+  :root { --bg:#f6f7f9; --card:#fff; --ink:#111827; --muted:#6b7280; --line:#e5e7eb; --accent:#4f46e5; }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--ink);
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif; }
+  .wrap { max-width:1040px; margin:0 auto; padding:36px 20px 80px; }
+  h1 { font-size:24px; margin:0 0 6px; }
+  .lead { color:var(--muted); font-size:14px; margin-bottom:24px; }
+  .panel { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:18px; margin-bottom:18px; }
+  .row { display:flex; gap:10px; flex-wrap:wrap; }
+  input[type=text] { flex:1 1 420px; padding:11px 13px; border:1px solid var(--line); border-radius:8px; font-size:14px; }
+  select, button { padding:11px 14px; border-radius:8px; border:1px solid var(--line); font-size:14px; background:#fff; }
+  button { background:var(--accent); color:#fff; border-color:var(--accent); cursor:pointer; font-weight:600; }
+  button:disabled { opacity:.5; cursor:not-allowed; }
+  .stream { max-height:360px; overflow:auto; font-family:ui-monospace,Menlo,Consolas,monospace; font-size:12.5px; line-height:1.9; }
+  .ev { display:flex; gap:10px; padding:3px 0; border-bottom:1px dashed #f1f5f9; }
+  .ev .t { color:var(--muted); width:58px; flex:none; }
+  .ev .a { width:112px; flex:none; color:#3730a3; }
+  .ev .m { flex:1; }
+  .ok { color:#047857; } .warn { color:#b45309; } .bad { color:#b91c1c; }
+  h2 { font-size:14px; text-transform:uppercase; letter-spacing:.05em; color:var(--muted); margin:0 0 12px; }
+  .claim { padding:8px 0; border-bottom:1px solid #f8fafc; font-size:14px; line-height:1.7; }
+  .ref { color:var(--accent); font-size:12px; margin-left:6px; }
+  .act { border:1px solid var(--line); border-radius:9px; padding:12px 14px; margin-bottom:10px; }
+  .act .title { font-weight:650; margin-bottom:6px; }
+  .act .meta { color:var(--muted); font-size:12.5px; line-height:1.8; }
+  .stats { display:flex; gap:18px; flex-wrap:wrap; color:var(--muted); font-size:13px; margin-top:10px; }
+  .stats b { color:var(--ink); }
+  .hidden { display:none; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>membergraph</h1>
+  <div class="lead">六个角色协作：规划 → 取证 → 归因 → 策略 → 评审 → 合规。每一步都可追溯。</div>
+
+  <div class="panel">
+    <div class="row">
+      <input id="topic" type="text" value="9月复购率环比下滑，给出一个30天挽回方案">
+      <select id="provider"><option value="fake">fake（离线）</option><option value="deepseek">deepseek</option></select>
+      <button id="go">运行</button>
+    </div>
+    <div class="stats" id="stats"></div>
+  </div>
+
+  <div class="panel">
+    <h2>执行流</h2>
+    <div class="stream" id="stream"><span style="color:#9ca3af">等待运行…</span></div>
+  </div>
+
+  <div class="panel hidden" id="result">
+    <h2>结论</h2>
+    <div id="claims"></div>
+    <h2 style="margin-top:22px">执行动作</h2>
+    <div id="actions"></div>
+  </div>
+</div>
+
+<script>
+const $ = (id) => document.getElementById(id);
+let es = null;
+
+function describe(e) {
+  switch (e.type) {
+    case "run_start": return `开始：${e.topic}`;
+    case "plan": return `拆出 ${e.count} 个子问题（${(e.metrics || []).join(", ")}）`;
+    case "llm_call": return `${e.agent} 调用模型 · ${e.tokens_in}/${e.tokens_out} tokens · $${(e.cost_usd || 0).toFixed(6)}`;
+    case "tool_call": return `${e.tool}(${e.metric || ""}${e.dimension ? ", " + e.dimension : ""}) → ${e.value ?? e.total_change ?? ""}`;
+    case "dimension_fallback": return `维度回退：${e.requested} → ${e.used}`;
+    case "decomposition_skipped": return `跳过分解：${e.reason}`;
+    case "diagnose": return `产出 ${e.claims} 条结论（丢弃 ${e.dropped} 条无证据结论）`;
+    case "strategize": return `第 ${e.round} 轮：${e.actions} 个动作${e.revised ? "（按评审意见修订）" : ""}`;
+    case "critique": return `评审 ${e.verdict === "pass" ? "通过" : "打回：" + (e.failure_codes || []).join(",")}`;
+    case "compliance": return `合规检查：${e.issues} 项，阻断 ${e.blocking}`;
+    case "degrade": return `降级：${e.reason}`;
+    case "run_end": return `完成 · 成本 $${(e.cost_usd || 0).toFixed(6)} · 结论 ${e.claims} · 动作 ${e.actions}`;
+    default: return e.type;
+  }
+}
+
+function tone(e) {
+  if (e.type === "degrade" || e.type === "run_error") return "bad";
+  if (e.type === "critique") return e.verdict === "pass" ? "ok" : "warn";
+  if (e.type === "run_end") return "ok";
+  return "";
+}
+
+function addEvent(e) {
+  const row = document.createElement("div");
+  row.className = "ev";
+  const t = document.createElement("span");
+  t.className = "t";
+  t.textContent = ((e.offset_ms || 0) / 1000).toFixed(2) + "s";
+  const a = document.createElement("span");
+  a.className = "a";
+  a.textContent = e.agent || e.type;
+  const m = document.createElement("span");
+  m.className = "m " + tone(e);
+  m.textContent = describe(e);
+  row.append(t, a, m);
+  $("stream").appendChild(row);
+  $("stream").scrollTop = $("stream").scrollHeight;
+}
+
+function renderResult(plan) {
+  $("result").classList.remove("hidden");
+  const claims = $("claims");
+  claims.innerHTML = "";
+  (plan.claims || []).forEach((c) => {
+    const d = document.createElement("div");
+    d.className = "claim";
+    d.textContent = c.text;
+    const ref = document.createElement("span");
+    ref.className = "ref";
+    ref.textContent = "[" + (c.evidence_ids || []).join(",") + "]";
+    d.appendChild(ref);
+    claims.appendChild(d);
+  });
+  const acts = $("actions");
+  acts.innerHTML = "";
+  (plan.actions || []).forEach((a) => {
+    const d = document.createElement("div");
+    d.className = "act";
+    const title = document.createElement("div");
+    title.className = "title";
+    title.textContent = a.offer;
+    const meta = document.createElement("div");
+    meta.className = "meta";
+    meta.textContent = `人群：${a.segment} · 渠道：${a.channel} · 时点：${a.timing} · 预算：¥${a.budget_cny} · 指标：${a.success_metric}`;
+    d.append(title, meta);
+    acts.appendChild(d);
+  });
+  $("stats").innerHTML = "";
+  const bits = [
+    ["证据", plan.evidence.length],
+    ["结论", plan.claims.length],
+    ["动作", plan.actions.length],
+    ["降级", plan.degraded ? "是" : "否"],
+    ["成本", "$" + (plan.budget.spent_usd || 0).toFixed(6)],
+  ];
+  bits.forEach(([k, v]) => {
+    const s = document.createElement("span");
+    s.innerHTML = `${k} <b></b>`;
+    s.querySelector("b").textContent = v;
+    $("stats").appendChild(s);
+  });
+}
+
+$("go").onclick = () => {
+  if (es) es.close();
+  $("stream").innerHTML = "";
+  $("result").classList.add("hidden");
+  $("go").disabled = true;
+  const url = `/api/run?topic=${encodeURIComponent($("topic").value)}&provider=${$("provider").value}`;
+  es = new EventSource(url);
+  es.onmessage = (msg) => {
+    const e = JSON.parse(msg.data);
+    addEvent(e);
+    if (e.type === "result") { renderResult(e.plan); es.close(); $("go").disabled = false; }
+    if (e.type === "error") { es.close(); $("go").disabled = false; }
+  };
+  es.onerror = () => { es.close(); $("go").disabled = false; };
+};
+</script>
+</body>
+</html>

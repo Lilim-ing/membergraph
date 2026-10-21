@@ -1,0 +1,49 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "membergraph"
+version = "0.1.0"
+description = "Multi-agent member-growth workbench with an evidence ledger, budget-aware degradation, and replayable traces."
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+dependencies = [
+    "pandas>=2.0",
+    "numpy>=1.24",
+    "pyarrow>=14.0",
+    "pydantic>=2.5",
+    "typer>=0.12",
+    "rich>=13.0",
+    "pyyaml>=6.0",
+    "duckdb>=0.10",
+    "fastapi>=0.110",
+    "uvicorn>=0.27",
+    "httpx>=0.26",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=7.4", "ruff>=0.4"]
+
+[project.scripts]
+membergraph = "membergraph.cli:app"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+membergraph = ["web/*.html"]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]
+addopts = "-q"
+
+[tool.ruff]
+line-length = 110
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
+ignore = ["E501"]

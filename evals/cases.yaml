@@ -1,0 +1,56 @@
+cases:
+  - id: repurchase_drop
+    topic: "9月复购率环比下滑，给出一个30天挽回方案"
+    expect:
+      min_evidence: 3
+      min_claims: 2
+      min_actions: 1
+      max_blocking: 0
+      degraded: false
+
+  - id: churn_rise
+    topic: "近半年沉睡会员占比上升，如何召回"
+    expect:
+      min_evidence: 3
+      min_claims: 2
+      min_actions: 1
+      max_blocking: 0
+      degraded: false
+
+  - id: aov_upt
+    topic: "客单价增长但连带率下降，问题出在哪"
+    expect:
+      min_evidence: 3
+      min_claims: 2
+      min_actions: 1
+      max_blocking: 0
+      degraded: false
+
+  - id: active_decline
+    topic: "会员活跃率连续两个月走弱，先查什么"
+    expect:
+      min_evidence: 3
+      min_claims: 2
+      min_actions: 1
+      max_blocking: 0
+      degraded: false
+
+  - id: tight_budget
+    topic: "9月复购率环比下滑，给出一个30天挽回方案"
+    budget_cny: 6000
+    expect:
+      min_evidence: 3
+      min_claims: 2
+      min_actions: 1
+      max_blocking: 0
+      degraded: false
+
+  - id: forced_degradation
+    topic: "9月复购率环比下滑，给出一个30天挽回方案"
+    max_tool_calls: 3
+    expect:
+      min_evidence: 1
+      min_claims: 0
+      min_actions: 0
+      max_blocking: 2
+      degraded: true
